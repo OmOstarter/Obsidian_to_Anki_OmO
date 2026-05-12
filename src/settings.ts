@@ -102,13 +102,13 @@ export class SettingsTab extends PluginSettingTab {
 
 	create_collapsible(name: string) {
 		let {containerEl} = this;
-		let div = containerEl.createEl('div', {cls: "collapsible-item"})
+		let div = containerEl.createEl('div', {cls: "anki-collapsible-item"})
 		div.innerHTML = `
-			<div class="collapsible-item-self"><div class="collapsible-item-collapse collapse-icon anki-rotated"><svg viewBox="0 0 100 100" width="8" height="8" class="right-triangle"><path fill="currentColor" stroke="currentColor" d="M94.9,20.8c-1.4-2.5-4.1-4.1-7.1-4.1H12.2c-3,0-5.7,1.6-7.1,4.1c-1.3,2.4-1.2,5.2,0.2,7.6L43.1,88c1.5,2.3,4,3.7,6.9,3.7 s5.4-1.4,6.9-3.7l37.8-59.6C96.1,26,96.2,23.2,94.9,20.8L94.9,20.8z"></path></svg></div><div class="collapsible-item-inner"></div><header>${name}</header></div>
+			<div class="anki-collapsible-item-self"><div class="anki-collapse-icon anki-rotated"><svg viewBox="0 0 100 100" width="8" height="8"><path fill="currentColor" stroke="currentColor" d="M94.9,20.8c-1.4-2.5-4.1-4.1-7.1-4.1H12.2c-3,0-5.7,1.6-7.1,4.1c-1.3,2.4-1.2,5.2,0.2,7.6L43.1,88c1.5,2.3,4,3.7,6.9,3.7 s5.4-1.4,6.9-3.7l37.8-59.6C96.1,26,96.2,23.2,94.9,20.8L94.9,20.8z"></path></svg></div><header class="anki-collapsible-header">${name}</header></div>
 		`
 		div.addEventListener('click', function () {
 			this.classList.toggle("active")
-			let icon = this.firstElementChild.firstElementChild as HTMLElement
+			let icon = this.querySelector('.anki-collapse-icon') as HTMLElement
 			icon.classList.toggle("anki-rotated")
 			let content = this.nextElementSibling as HTMLElement
 			if (content.style.display === "block") {
@@ -156,9 +156,9 @@ export class SettingsTab extends PluginSettingTab {
 	setup_syntax() {
 		let {containerEl} = this;
 		const plugin = (this as any).plugin
-		let syntax_settings = containerEl.createEl('h3', {text: 'Syntax Settings'})
+		containerEl.createEl('h3', {text: 'Syntax Settings'})
 		for (let key of Object.keys(plugin.settings["Syntax"])) {
-			new Setting(syntax_settings)
+			new Setting(containerEl)
 				.setName(key)
 				.addText(
 						text => text.setValue(plugin.settings["Syntax"][key])
@@ -173,7 +173,8 @@ export class SettingsTab extends PluginSettingTab {
 	setup_defaults() {
 		let {containerEl} = this;
 		const plugin = (this as any).plugin
-		let defaults_settings = containerEl.createEl('h3', {text: 'Defaults'})
+		containerEl.createEl('h3', {text: 'Defaults'})
+		let defaults_settings = containerEl
 
 		// To account for new scan directory
 		if (!(plugin.settings["Defaults"].hasOwnProperty("Scan Directory"))) {
@@ -337,8 +338,8 @@ export class SettingsTab extends PluginSettingTab {
 	setup_buttons() {
 		let {containerEl} = this
 		const plugin = (this as any).plugin
-		let action_buttons = containerEl.createEl('h3', {text: 'Actions'})
-		new Setting(action_buttons)
+		containerEl.createEl('h3', {text: 'Actions'})
+		new Setting(containerEl)
 			.setName("Regenerate Note Type Table")
 			.setDesc("Connect to Anki to regenerate the table with new note types, or get rid of deleted note types.")
 			.addButton(
@@ -370,7 +371,7 @@ export class SettingsTab extends PluginSettingTab {
 					})
 				}
 			)
-		new Setting(action_buttons)
+		new Setting(containerEl)
 			.setName("Clear Media Cache")
 			.setDesc(`Clear the cached list of media filenames that have been added to Anki.
 
@@ -385,7 +386,7 @@ export class SettingsTab extends PluginSettingTab {
 					})
 				}
 			)
-		new Setting(action_buttons)
+		new Setting(containerEl)
 			.setName("Clear File Hash Cache")
 			.setDesc(`Clear the cached dictionary of file hashes that the plugin has scanned before.
 
@@ -404,7 +405,7 @@ export class SettingsTab extends PluginSettingTab {
 	setup_ignore_files() {
 		let { containerEl } = this;
 		const plugin = (this as any).plugin
-		let ignored_files_settings = containerEl.createEl('h3', { text: 'Ignored File Settings' })
+		containerEl.createEl('h3', { text: 'Ignored File Settings' })
 		plugin.settings["IGNORED_FILE_GLOBS"] = plugin.settings.hasOwnProperty("IGNORED_FILE_GLOBS") ? plugin.settings["IGNORED_FILE_GLOBS"] : DEFAULT_IGNORED_FILE_GLOBS
 		const descriptionFragment = document.createDocumentFragment();
 		descriptionFragment.createEl("span", { text: "Glob patterns for files to ignore. You can add multiple patterns. One per line. Have a look at the " })
@@ -412,7 +413,7 @@ export class SettingsTab extends PluginSettingTab {
 		descriptionFragment.createEl("span", { text: " for more information, examples and further resources." })
 
 
-		new Setting(ignored_files_settings)
+		new Setting(containerEl)
 			.setName("Patterns to ignore")
 			.setDesc(descriptionFragment)
 			.addTextArea(text => {
