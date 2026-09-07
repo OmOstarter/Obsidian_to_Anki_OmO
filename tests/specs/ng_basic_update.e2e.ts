@@ -26,6 +26,14 @@ async function syncObsidianAnki() {
     do
     {
         logs = logs.concat( await browser.getLogs('browser'));
+        const confirmChanges = await $('button*=確認同步勾選項目');
+        if (await confirmChanges.isExisting()) {
+            const beforeLabel = await $('div*=更新前（Anki）');
+            const afterLabel = await $('div*=更新後（Obsidian）');
+            await expect(beforeLabel).toExist();
+            await expect(afterLabel).toExist();
+            await confirmChanges.click();
+        }
         console.log(logs);
         await delay(100);
     }
@@ -258,4 +266,3 @@ describe(test_name_fmt, () => {
         await delay(5000); // >3000ms req; the last test of this spec, wait for anki and obsidian to close properly
     })
 })
-

@@ -1,10 +1,17 @@
-import { Notice, Plugin, addIcon, TFile, TFolder } from 'obsidian'
+import { Notice, Plugin, addIcon, TFile, TFolder, MarkdownView } from 'obsidian'
 import * as AnkiConnect from './src/anki'
 import { PluginSettings, ParsedSettings } from './src/interfaces/settings-interface'
 import { DEFAULT_IGNORED_FILE_GLOBS, SettingsTab } from './src/settings'
 import { ANKI_ICON } from './src/constants'
 import { settingToData } from './src/setting-to-data'
 import { FileManager } from './src/files-manager'
+import { confirmAnkiChanges } from './src/sync-confirmation-modal'
+import {
+	SHARED_SETTINGS_PATH,
+	makeSharedSettings,
+	mergeSharedSettings,
+	parseSharedSettings
+} from './src/shared-settings'
 
 export default class MyPlugin extends Plugin {
 
@@ -72,7 +79,7 @@ export default class MyPlugin extends Plugin {
 
 	async saveDefault(): Promise<void> {
 		const default_sets = await this.getDefaultSettings()
-		this.saveData(
+		await this.saveData(
 			{
 				settings: default_sets,
 				"Added Media": [],
@@ -87,7 +94,7 @@ export default class MyPlugin extends Plugin {
 		if (current_data == null || Object.keys(current_data).length != 4) {
 			new Notice("Need to connect to Anki generate default settings...")
 			const default_sets = await this.getDefaultSettings()
-			this.saveData(
+			await this.saveData(
 				{
 					settings: default_sets,
 					"Added Media": [],
@@ -133,7 +140,7 @@ export default class MyPlugin extends Plugin {
 	}
 
 	async saveAllData(): Promise<void> {
-		this.saveData(
+		await this.saveData(
 				{
 					settings: this.settings,
 					"Added Media": this.added_media,
@@ -141,6 +148,35 @@ export default class MyPlugin extends Plugin {
 					fields_dict: this.fields_dict
 				}
 		)
+	}
+
+	async saveSharedSettings(): Promise<void> {
+		const shared = makeSharedSettings(this.settings)
+		const content = JSON.stringify(shared, null, 2)
+		const existing = this.app.vault.getAbstractFileByPath(SHARED_SETTINGS_PATH)
+		if (existing instanceof TFile) {
+			await this.app.vault.modify(existing, content)
+		} else {
+			await this.app.vault.create(SHARED_SETTINGS_PATH, content)
+		}
+	}
+
+	async importSharedSettings(): Promise<boolean> {
+		const sharedFile = this.app.vault.getAbstractFileByPath(SHARED_SETTINGS_PATH)
+		if (!(sharedFile instanceof TFile)) {
+			new Notice(`找不到共享設定檔：${SHARED_SETTINGS_PATH}`)
+			return false
+		}
+		const shared = parseSharedSettings(await this.app.vault.read(sharedFile))
+		if (!shared) {
+			new Notice('共享設定檔格式無效，沒有套用任何設定。')
+			return false
+		}
+		this.settings = mergeSharedSettings(this.settings, shared)
+		this.regenerateSettingsRegexps()
+		await this.saveAllData()
+		new Notice('已匯入共享設定；Note Type Table 與 Folder Table 已更新。')
+		return true
 	}
 
 	regenerateSettingsRegexps() {
@@ -212,6 +248,20 @@ export default class MyPlugin extends Plugin {
 		}
 		
 		await manager.initialiseFiles()
+		const changes = await manager.prepareNoteChanges()
+		if (manager.unavailable_note_ids.length > 0) {
+			new Notice(
+				`${manager.unavailable_note_ids.length} 張卡片已從 Anki 刪除或尚未同步；請在確認視窗選擇是否復原。`
+			)
+		}
+		if (changes.length > 0) {
+			const approved = await confirmAnkiChanges(this.app, changes)
+			if (approved == null) {
+				new Notice('已取消同步，Anki 與 Markdown 均未變更。')
+				return
+			}
+			manager.setApprovedNoteChanges(approved)
+		}
 		await manager.requests_1()
 		this.added_media = Array.from(manager.added_media_set)
 		const hashes = manager.getHashes()
@@ -219,12 +269,29 @@ export default class MyPlugin extends Plugin {
 			this.file_hashes[key] = hashes[key]
 		}
 		new Notice("All done! Saving file hashes and added media now...")
-		this.saveAllData()
+		await this.saveAllData()
 	}
 
 	async onload() {
 		console.log('loading Obsidian_to_Anki...');
 		addIcon('anki', ANKI_ICON)
+		this.registerObsidianProtocolHandler('anki-card', async (params) => {
+			const filePath = params.file
+			const line = Number.parseInt(params.line ?? '', 10)
+			const file = filePath ? this.app.vault.getAbstractFileByPath(filePath) : null
+			if (!(file instanceof TFile)) {
+				new Notice('找不到 Anki 卡片的 Obsidian 原始檔案。')
+				return
+			}
+			const leaf = this.app.workspace.getLeaf(false)
+			await leaf.openFile(file)
+			const view = leaf.view
+			if (view instanceof MarkdownView && Number.isFinite(line) && line > 0) {
+				const targetLine = Math.min(line - 1, Math.max(0, view.editor.lineCount() - 1))
+				view.editor.setCursor({ line: targetLine, ch: 0 })
+				view.editor.scrollIntoView({ from: { line: targetLine, ch: 0 }, to: { line: targetLine, ch: 0 } }, true)
+			}
+		})
 
 		try {
 			this.settings = await this.loadSettings()

@@ -8,9 +8,12 @@ import { Md5 } from 'ts-md5/dist/md5';
 import * as AnkiConnect from './anki'
 import * as c from './constants'
 import { FormatConverter } from './format'
+import { replaceNoteId } from './note-change'
 import { CachedMetadata, HeadingCache } from 'obsidian'
+import { getObsidianUrl } from './obsidian-url'
 
 const double_regexp: RegExp = /(?:\r\n|\r|\n)((?:\r\n|\r|\n)(?:<!--)?ID: \d+)/g
+const existing_id_regexp: RegExp = /(?:<!--)?ID:\s*\d+/
 
 function id_to_str(identifier:number, inline:boolean = false, comment:boolean = false): string {
     let result = "ID: " + identifier.toString()
@@ -86,6 +89,7 @@ abstract class AbstractFile {
     notes_to_edit: AnkiConnectNoteAndID[]
     notes_to_delete: number[]
     all_notes_to_add: AnkiConnectNote[]
+    recreated_note_ids: number[]
 
     note_ids: Array<number | null>
     card_ids: number[]
@@ -142,7 +146,29 @@ abstract class AbstractFile {
         return Md5.hashStr(this.file) as string
     }
 
+    hasExistingNoteIDs(): boolean {
+        return existing_id_regexp.test(this.file)
+    }
+
     abstract scanFile(): void
+
+    queueMissingNotesForRecreation(identifiers: ReadonlySet<number>) {
+		let remaining: AnkiConnectNoteAndID[] = []
+		let queued = new Set<number>()
+		for (let parsed of this.notes_to_edit) {
+			if (parsed.identifier != null && identifiers.has(parsed.identifier)) {
+				if (!queued.has(parsed.identifier)) {
+					parsed.note.tags.push(...this.global_tags.split(TAG_SEP).filter(tag => tag.length > 0))
+					this.all_notes_to_add.push(parsed.note)
+					this.recreated_note_ids.push(parsed.identifier)
+					queued.add(parsed.identifier)
+				}
+			} else {
+				remaining.push(parsed)
+			}
+		}
+		this.notes_to_edit = remaining
+    }
 
     scanDeletions() {
         for (let match of this.file.matchAll(this.data.EMPTY_REGEXP)) {
@@ -181,6 +207,16 @@ abstract class AbstractFile {
         return result_arr.join(" > ")
     }
 
+    getUrlAtPosition(position: number): string {
+        if (!this.url) {
+            return ""
+        }
+        // Use the card's line as the primary target. A heading anchor takes
+        // precedence in Obsidian and would select the heading instead of the
+        // actual card when both are present in the URI.
+        return getObsidianUrl(this.data.vault_name, this.path, this.file, position)
+    }
+
     abstract writeIDs(): void
 
     removeEmpties() {
@@ -207,9 +243,12 @@ abstract class AbstractFile {
         return AnkiConnect.deleteNotes(this.notes_to_delete)
     }
 
-    getUpdateFields(): AnkiConnect.AnkiConnectRequest {
+    getUpdateFields(approved_note_ids?: ReadonlySet<number>): AnkiConnect.AnkiConnectRequest {
         let actions: AnkiConnect.AnkiConnectRequest[] = []
         for (let parsed of this.notes_to_edit) {
+			if (parsed.identifier == null || (approved_note_ids && !approved_note_ids.has(parsed.identifier))) {
+				continue
+			}
             actions.push(
                 AnkiConnect.updateNoteFields(
                     parsed.identifier, parsed.note.fields
@@ -296,6 +335,7 @@ export class AllFile extends AbstractFile {
         this.regex_id_indexes = []
         this.notes_to_edit = []
         this.notes_to_delete = []
+        this.recreated_note_ids = []
     }
 
     scanNotes() {
@@ -310,7 +350,7 @@ export class AllFile extends AbstractFile {
                 this.formatter
             ).parse(
                 this.target_deck,
-                this.url,
+                this.getUrlAtPosition(note_match.index),
                 this.frozen_fields_dict,
                 this.data,
                 this.data.add_context ? this.getContextAtIndex(note_match.index) : ""
@@ -320,16 +360,10 @@ export class AllFile extends AbstractFile {
                 parsed.note.tags.push(...this.global_tags.split(TAG_SEP))
                 this.notes_to_add.push(parsed.note)
                 this.id_indexes.push(position)
-            } else if (!this.data.EXISTING_IDS.includes(parsed.identifier)) {
-                if (parsed.identifier == CLOZE_ERROR) {
-                    continue
-                }
-                // Need to show an error otherwise
-                else if (parsed.identifier == NOTE_TYPE_ERROR) {
-                    console.warn("Did not recognise note type ", parsed.note.modelName, " in file ", this.path)
-                } else {
-                    console.warn("Note with id", parsed.identifier, " in file ", this.path, " does not exist in Anki!")
-                }
+            } else if (parsed.identifier == CLOZE_ERROR) {
+				continue
+			} else if (parsed.identifier == NOTE_TYPE_ERROR) {
+				console.warn("Did not recognise note type ", parsed.note.modelName, " in file ", this.path)
             } else {
                 this.notes_to_edit.push(parsed)
             }
@@ -348,7 +382,7 @@ export class AllFile extends AbstractFile {
                 this.formatter
             ).parse(
                 this.target_deck,
-                this.url,
+                this.getUrlAtPosition(note_match.index),
                 this.frozen_fields_dict,
                 this.data,
                 this.data.add_context ? this.getContextAtIndex(note_match.index) : ""
@@ -358,12 +392,8 @@ export class AllFile extends AbstractFile {
                 parsed.note.tags.push(...this.global_tags.split(TAG_SEP))
                 this.inline_notes_to_add.push(parsed.note)
                 this.inline_id_indexes.push(position)
-            } else if (!this.data.EXISTING_IDS.includes(parsed.identifier)) {
-                // Need to show an error
-                if (parsed.identifier == CLOZE_ERROR) {
-                    continue
-                }
-                console.warn("Note with id", parsed.identifier, " in file ", this.path, " does not exist in Anki!")
+            } else if (parsed.identifier == CLOZE_ERROR) {
+				continue
             } else {
                 this.notes_to_edit.push(parsed)
             }
@@ -386,22 +416,18 @@ export class AllFile extends AbstractFile {
                         search_tags, search_id, this.data.curly_cloze, this.data.highlights_to_cloze, this.formatter
                     ).parse(
                         this.target_deck,
-                        this.url,
+                        this.getUrlAtPosition(match.index),
                         this.frozen_fields_dict,
                         this.data,
                         this.data.add_context ? this.getContextAtIndex(match.index) : ""
                     )
                     if (search_id) {
-                        if (!(this.data.EXISTING_IDS.includes(parsed.identifier))) {
-                            if (parsed.identifier == CLOZE_ERROR) {
-                                // This means it wasn't actually a note! So we should remove it from ignore_spans
-                                this.ignore_spans.pop()
-                                continue
-                            }
-                            console.warn("Note with id", parsed.identifier, " in file ", this.path, " does not exist in Anki!")
-                        } else {
-                            this.notes_to_edit.push(parsed)
-                        }
+						if (parsed.identifier == CLOZE_ERROR) {
+							// This means it wasn't actually a note! So we should remove it from ignore_spans
+							this.ignore_spans.pop()
+							continue
+						}
+						this.notes_to_edit.push(parsed)
                     } else {
                         if (parsed.identifier == CLOZE_ERROR) {
                             // This means it wasn't actually a note! So we should remove it from ignore_spans
@@ -464,6 +490,13 @@ export class AllFile extends AbstractFile {
             }
         )
         this.file = string_insert(this.file, normal_inserts.concat(inline_inserts).concat(regex_inserts))
+		const recreation_offset = this.all_notes_to_add.length - this.recreated_note_ids.length
+		this.recreated_note_ids.forEach((old_identifier: number, index: number) => {
+			const new_identifier = this.note_ids[recreation_offset + index]
+			if (new_identifier) {
+				this.file = replaceNoteId(this.file, old_identifier, new_identifier)
+			}
+		})
         this.fix_newline_ids()
     }
 }

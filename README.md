@@ -1,4 +1,82 @@
-# Obsidian_to_Anki
+# Obsidian_to_Anki OmO
+
+[繁體中文](#繁體中文) | [English](#english)
+
+## 繁體中文
+
+將 Obsidian 的 Markdown 筆記匯出為 Anki 卡片，支援自訂卡片語法、筆記類型、牌組、標籤、圖片、音訊與數學公式。
+
+本專案是 [Pseudonium/Obsidian_to_Anki](https://github.com/Pseudonium/Obsidian_to_Anki) 的衍生版本，保留原專案功能，並加入以下改進：
+
+- **卡片變更確認**：同步更新前，檢視欄位的前後差異，勾選要套用的變更。
+- **遺失卡片復原**：當筆記中的卡片 ID 已不存在於 Anki 時，可確認後重新建立卡片，並更新 Markdown 中的 ID。若只是另一台電腦尚未完成 Anki 同步，請先取消並完成同步。
+- **共用設定**：支援透過共用設定檔保存與載入插件設定。
+- **筆記連結改進**：改善 Anki 卡片返回 Obsidian 筆記的連結處理。
+
+### 安裝此版本
+
+1. 在 Anki 安裝 AnkiConnect，並依[原專案設定說明](https://github.com/Pseudonium/Obsidian_to_Anki/wiki)完成連線設定。
+2. 從[本專案的 Releases](https://github.com/OmOstarter/Obsidian_to_Anki_OmO/releases) 下載 `main.js`、`manifest.json`、`styles.css`。
+3. 將這三個檔案放入 Obsidian 筆記庫的 `.obsidian/plugins/obsidian-to-anki-plugin/` 資料夾；若資料夾不存在，請先建立。
+4. 重新啟動 Obsidian，在「設定 → 社群外掛」中啟用插件。
+5. 同步卡片時保持 Anki 開啟，使用側邊欄的 Anki 圖示執行同步。
+
+也可以下載插件 ZIP，解壓縮至 `.obsidian/plugins/`，確認 `main.js` 位於上述插件資料夾內。
+
+此版本沿用原插件 ID，安裝後會取代同一筆記庫中的原版插件。請先備份原有插件資料夾。從 Obsidian 社群外掛清單安裝的是原版；請使用本專案 Releases 安裝此版本。
+
+### 使用方式
+
+在插件設定中選擇掃描範圍、預設牌組與卡片語法，再依指定語法撰寫筆記。執行同步後，插件會將卡片匯出至 Anki；之後可繼續在 Markdown 中修改內容並同步更新。
+
+支援自訂筆記類型、整份檔案的標籤、依檔案指定牌組、忽略資料夾與檔案，以及使用正規表示式定義卡片語法。自訂語法預設不啟用，需先在設定中配置。詳細語法與範例可參考下方英文文件及[原專案 Wiki](https://github.com/Pseudonium/Obsidian_to_Anki/wiki)。
+
+### 建置與封裝
+
+開發環境需要 Node.js、npm、Git 與 `zip`。在專案根目錄執行：
+
+```sh
+npm ci
+npm run package-release
+```
+
+封裝指令會執行單元測試、建置插件，並將以下檔案輸出至 `release/`：
+
+- `main.js`、`manifest.json`、`styles.css`：手動安裝所需的三個檔案。
+- `obsidian-to-anki-plugin-<版本>.zip`：可解壓縮至插件目錄的安裝包，內含授權檔案。
+- `obsidian-to-anki-plugin-<版本>-source.zip`：目前工作目錄的原始碼，不包含 Git 歷史與已排除的本機檔案。
+
+### 發布至 GitHub
+
+建立 GitHub Release 時，使用與 `manifest.json` 相同的版本標籤，並附上 `release/` 內的 `main.js`、`manifest.json`、`styles.css`，也可一併提供插件 ZIP。README 下方保留原專案的英文說明與使用範例。
+
+### 原專案與授權
+
+本專案衍生自 Pseudonium 的 Obsidian_to_Anki，保留原作者資訊與 [LICENSE](LICENSE) 授權檔案。
+
+## English
+
+This repository is a fork of [Pseudonium/Obsidian_to_Anki](https://github.com/Pseudonium/Obsidian_to_Anki). It adds a confirmation dialog for card updates and recovery, shared settings, and improvements to Obsidian file links.
+
+## Install this fork
+
+Download `main.js`, `manifest.json`, and `styles.css` from this repository's GitHub Releases and place them in your vault under `.obsidian/plugins/obsidian-to-anki-plugin/`. Restart Obsidian and enable the plugin. Anki must be running with AnkiConnect installed when syncing.
+
+This fork uses the original plugin ID, so installing it replaces the original plugin in that vault. Back up your existing plugin folder first.
+
+## Build and package
+
+```sh
+npm ci
+npm run package-release
+```
+
+The packaging command runs the unit tests, builds the plugin, and writes the installation files and two ZIP archives to `release/`. The plugin ZIP contains the plugin folder ready to extract into `.obsidian/plugins/`. The source ZIP contains the current source files without repository history or ignored local files. Packaging requires Node.js, npm, Git, and `zip`.
+
+To publish a GitHub Release, attach `release/main.js`, `release/manifest.json`, and `release/styles.css`; optionally attach the plugin ZIP. Use a tag matching the version in `manifest.json`. The documentation below describes the upstream plugin; community-plugin installation installs the upstream version.
+
+## Upstream documentation
+
 Plugin to add flashcards from a text or markdown file to Anki. Run in Obsidian as a plugin, or from the command-line as a python script. Built with [Obsidian](https://obsidian.md/) markdown syntax in mind. Supports **user-defined custom syntax for flashcards.**  
 See the [Trello](https://trello.com/b/6MXEizGg/obsidiantoanki) for planned features.
 

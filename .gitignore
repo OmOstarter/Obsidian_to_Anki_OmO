@@ -281,3 +281,24 @@ tests/test_config/*
 tests/test_vault/*
 tests/specs_gen/*
 tests/test_outputs/*
+
+# Local development instructions and editor settings
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+GEMINI.md
+.claude/
+.codex/
+.agents/
+.cursor/
+.cursorrules
+.github/copilot-instructions.md
+.vscode/
+.env.*
+!.env.example
+*.bak
+*.backup
+*~
+
+# Local release packages
+/release/

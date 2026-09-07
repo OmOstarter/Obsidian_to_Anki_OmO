@@ -6,8 +6,10 @@
     "scripts": {
         "dev": "rollup --config rollup.config.js -w",
         "build": "rollup --config rollup.config.js",
+        "package-release": "npm run test-unit && npm run build && node scripts/package-release.mjs",
         "copy": "rm -rf tests/defaults/test_vault/.obsidian/plugins/obsidian-to-anki-plugin && mkdir -p tests/defaults/test_vault/.obsidian/plugins/obsidian-to-anki-plugin && cp manifest.json styles.css main.js tests/defaults/test_vault/.obsidian/plugins/obsidian-to-anki-plugin/",
         "prep-wdio": "bash prepare-wdio.sh",
+        "test-unit": "node -r ts-node/register --test tests/unit/*.test.ts",
         "test-wdio": "npm run prep-wdio && docker build -t anki-obsidian . && wdio run ./wdio.conf.ts",
         "test-py": "pip install pytest anki && pytest -vvvs tests/anki/ --junitxml logs/test-reports/pytest.xml",
         "test": "npm run test-wdio && npm run test-py"

@@ -1,5 +1,6 @@
 import { PluginSettingTab, Setting, Notice, TFolder } from 'obsidian'
 import * as AnkiConnect from './anki'
+import { SHARED_SETTINGS_PATH } from './shared-settings'
 
 const defaultDescs = {
 	"Scan Directory": "The directory to scan. Leave empty to scan the entire vault",
@@ -401,6 +402,32 @@ export class SettingsTab extends PluginSettingTab {
 					})
 				}
 			)
+		new Setting(containerEl)
+			.setName("Shared settings (Dropbox / Vault sync)")
+			.setDesc(`The shared file ${SHARED_SETTINGS_PATH} is stored in the Vault. Put the Vault in Dropbox (or another synced folder), then import it on another computer. Note Type Table and Folder Table are shared; Anki connection state, file hashes and media cache stay local.`)
+			.addButton(button => button
+				.setButtonText("Export now")
+				.onClick(async () => {
+					try {
+						await plugin.saveSharedSettings()
+						new Notice(`Shared settings exported to ${SHARED_SETTINGS_PATH}`)
+					} catch (error) {
+						console.error(error)
+						new Notice('Could not export shared settings. Check the console.')
+					}
+				}))
+			.addButton(button => button
+				.setButtonText("Import")
+				.onClick(async () => {
+					try {
+						if (await plugin.importSharedSettings()) {
+							this.setup_display()
+						}
+					} catch (error) {
+						console.error(error)
+						new Notice('Could not import shared settings. Check the console.')
+					}
+				}))
 	}
 	setup_ignore_files() {
 		let { containerEl } = this;

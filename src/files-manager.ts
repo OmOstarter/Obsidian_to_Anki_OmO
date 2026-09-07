@@ -3,6 +3,8 @@ import { ParsedSettings, FileData } from './interfaces/settings-interface'
 import { App, TFile, TFolder, TAbstractFile, CachedMetadata, FileSystemAdapter, Notice } from 'obsidian'
 import { AllFile } from './file'
 import * as AnkiConnect from './anki'
+import { AnkiConnectNoteInfo, AnkiNoteChange } from './interfaces/note-interface'
+import { getNoteChange, getRecreatedNoteChange } from './note-change'
 import { basename } from 'path'
 import multimatch from "multimatch"
 interface addNoteResponse {
@@ -10,19 +12,7 @@ interface addNoteResponse {
     error: string | null
 }
 
-interface notesInfoResponse {
-    result: Array<{
-        noteId: number,
-        modelName: string,
-        tags: string[],
-        fields: Record<string, {
-            order: number,
-            value: string
-        }>,
-        cards: number[]
-    }>,
-    error: string | null
-}
+const NOTE_INFO_BATCH_SIZE = 500
 
 interface Requests1Result {
     0: {
@@ -34,7 +24,7 @@ interface Requests1Result {
     },
     1: {
         error: string | null,
-        result: notesInfoResponse[]
+        result: string[]
     },
     2: any,
     3: any,
@@ -59,6 +49,10 @@ export class FileManager {
     file_hashes: Record<string, string>
     requests_1_result: any
     added_media_set: Set<string>
+    approved_note_ids: Set<number>
+    unavailable_note_ids: number[]
+    changed_note_ids: Set<number>
+    current_notes_by_id: Map<number, AnkiConnectNoteInfo>
 
     constructor(app: App, data:ParsedSettings, files: TFile[], file_hashes: Record<string, string>, added_media: string[]) {
         this.app = app
@@ -69,6 +63,10 @@ export class FileManager {
         this.ownFiles = []
         this.file_hashes = file_hashes
         this.added_media_set = new Set(added_media)
+        this.approved_note_ids = new Set()
+        this.unavailable_note_ids = []
+        this.changed_note_ids = new Set()
+        this.current_notes_by_id = new Map()
     }
     getUrl(file: TFile): string {
         return "obsidian://open?vault=" + encodeURIComponent(this.data.vault_name) + String.raw`&file=` + encodeURIComponent(file.path)
@@ -157,9 +155,11 @@ export class FileManager {
         for (let index in this.ownFiles) {
             const i = parseInt(index)
             let file = this.ownFiles[i]
-            if (!(this.file_hashes.hasOwnProperty(file.path) && file.getHash() === this.file_hashes[file.path])) {
-                //Indicates it's changed or new
-                console.info("Scanning ", file.path, "as it's changed or new.")
+            const hashChanged = !(this.file_hashes.hasOwnProperty(file.path) && file.getHash() === this.file_hashes[file.path])
+            // Files containing IDs must be revalidated against this computer's Anki
+            // collection. The hash cache may have been copied from another computer.
+            if (hashChanged || file.hasExistingNoteIDs()) {
+                console.info("Scanning ", file.path, hashChanged ? "as it's changed or new." : "to verify existing Anki notes.")
                 file.scanFile()
                 files_changed.push(file)
                 obfiles_changed.push(this.files[i])
@@ -167,6 +167,115 @@ export class FileManager {
         }
         this.ownFiles = files_changed
         this.files = obfiles_changed
+    }
+
+    async prepareNoteChanges(): Promise<AnkiNoteChange[]> {
+        let identifiers: number[] = []
+        for (let file of this.ownFiles) {
+            file.card_ids = []
+            for (let parsed of file.notes_to_edit) {
+                if (parsed.identifier != null) {
+                    identifiers.push(parsed.identifier)
+                }
+            }
+        }
+
+        identifiers = Array.from(new Set(identifiers))
+        let currentNotes: AnkiConnectNoteInfo[] = []
+        for (let start = 0; start < identifiers.length; start += NOTE_INFO_BATCH_SIZE) {
+            const batch = identifiers.slice(start, start + NOTE_INFO_BATCH_SIZE)
+            const response = await AnkiConnect.invoke('notesInfo', {notes: batch}) as AnkiConnectNoteInfo[]
+            currentNotes.push(...response.filter(note => typeof note?.noteId === 'number'))
+        }
+
+        const currentById = new Map<number, AnkiConnectNoteInfo>()
+        for (let note of currentNotes) {
+            currentById.set(note.noteId, note)
+        }
+        this.current_notes_by_id = currentById
+
+        this.unavailable_note_ids = identifiers.filter(identifier => !currentById.has(identifier))
+        for (let identifier of this.unavailable_note_ids) {
+            console.warn("Note with id", identifier, "does not exist in this Anki collection. Sync Anki on this computer first.")
+        }
+
+        let changes: AnkiNoteChange[] = []
+        let compared = new Set<number>()
+        for (let file of this.ownFiles) {
+            for (let parsed of file.notes_to_edit) {
+                const identifier = parsed.identifier
+                if (identifier == null) {
+                    continue
+                }
+                if (compared.has(identifier)) {
+                    console.warn("Duplicate Anki note id", identifier, "was found in", file.path)
+                    continue
+                }
+                compared.add(identifier)
+                const current = currentById.get(identifier)
+                if (!current) {
+                    const recreation = getRecreatedNoteChange(file.path, parsed)
+                    if (recreation) {
+                        changes.push(recreation)
+                    }
+                    continue
+                }
+                file.card_ids.push(...current.cards)
+                if (current.modelName !== parsed.note.modelName) {
+                    console.warn(
+                        "Note with id", identifier, "uses model", current.modelName,
+                        "in Anki but", parsed.note.modelName, "in", file.path
+                    )
+                    continue
+                }
+                const change = getNoteChange(file.path, parsed, current)
+                if (change) {
+                    changes.push(change)
+                }
+            }
+        }
+        this.changed_note_ids = new Set(changes.map(change => change.identifier))
+        return changes
+    }
+
+    setApprovedNoteChanges(identifiers: Set<number>) {
+        this.approved_note_ids = identifiers
+        const approvedMissing = new Set(
+            this.unavailable_note_ids.filter(identifier => identifiers.has(identifier))
+        )
+        const rejected = new Set(
+            Array.from(this.changed_note_ids).filter(identifier => !identifiers.has(identifier))
+        )
+        let queuedRecreations = new Set<number>()
+        for (let file of this.ownFiles) {
+            const recreationsForFile = new Set<number>()
+            for (let parsed of file.notes_to_edit) {
+                if (
+                    parsed.identifier != null &&
+                    approvedMissing.has(parsed.identifier) &&
+                    !queuedRecreations.has(parsed.identifier)
+                ) {
+                    recreationsForFile.add(parsed.identifier)
+                    queuedRecreations.add(parsed.identifier)
+                }
+            }
+            file.queueMissingNotesForRecreation(recreationsForFile)
+            file.notes_to_edit = file.notes_to_edit.filter(parsed =>
+                parsed.identifier != null &&
+                this.current_notes_by_id.has(parsed.identifier) &&
+                !rejected.has(parsed.identifier)
+            )
+            file.card_ids = []
+            for (let parsed of file.notes_to_edit) {
+                if (parsed.identifier == null) {
+                    continue
+                }
+                const current = this.current_notes_by_id.get(parsed.identifier)
+                if (current) {
+                    file.card_ids.push(...current.cards)
+                }
+            }
+        }
     }
 
     async requests_1() {
@@ -184,17 +293,11 @@ export class FileManager {
         }
         requests.push(AnkiConnect.multi(temp))
         temp = []
-        console.info("Requesting card IDs of notes to be edited...")
-        for (let file of this.ownFiles) {
-            temp.push(file.getNoteInfo())
-        }
-        requests.push(AnkiConnect.multi(temp))
-        temp = []
         console.info("Requesting tag list...")
         requests.push(AnkiConnect.getTags())
         console.info("Requesting update of fields of existing notes")
         for (let file of this.ownFiles) {
-            temp.push(file.getUpdateFields())
+            temp.push(file.getUpdateFields(this.approved_note_ids))
         }
         requests.push(AnkiConnect.multi(temp))
         temp = []
@@ -234,7 +337,7 @@ export class FileManager {
 
     async parse_requests_1() {
         const response = this.requests_1_result as Requests1Result
-        if (response[5].result.length >= 1 && response[5].result[0].error != null) {
+        if (response[4].result.length >= 1 && response[4].result[0].error != null) {
             new Notice("Please update AnkiConnect! The way the script has added media files has changed.")
             console.warn("Please update AnkiConnect! The way the script has added media files has changed.")
         }
@@ -245,8 +348,7 @@ export class FileManager {
             console.error("Error: ", error)
             note_ids_array_by_file = response[0].result
         }
-        const note_info_array_by_file = AnkiConnect.parse(response[1])
-        const tag_list: string[] = AnkiConnect.parse(response[2])
+        const tag_list: string[] = AnkiConnect.parse(response[1])
         for (let index in note_ids_array_by_file) {
             let i: number = parseInt(index)
             let file = this.ownFiles[i]
@@ -268,16 +370,6 @@ export class FileManager {
                     file.note_ids.push(response.result)
                 }
             }
-        }
-        for (let index in note_info_array_by_file) {
-            let i: number = parseInt(index)
-            let file = this.ownFiles[i]
-            const file_response = AnkiConnect.parse(note_info_array_by_file[i])
-            let temp: number[] = []
-            for (let note_response of file_response) {
-                temp.push(...note_response.cards)
-            }
-            file.card_ids = temp
         }
         for (let index in this.ownFiles) {
             let i: number = parseInt(index)
