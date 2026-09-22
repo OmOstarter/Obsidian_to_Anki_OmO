@@ -26,14 +26,7 @@ async function syncObsidianAnki() {
     do
     {
         logs = logs.concat( await browser.getLogs('browser'));
-        const confirmChanges = await $('button*=確認同步勾選項目');
-        if (await confirmChanges.isExisting()) {
-            const beforeLabel = await $('div*=更新前（Anki）');
-            const afterLabel = await $('div*=更新後（Obsidian）');
-            await expect(beforeLabel).toExist();
-            await expect(afterLabel).toExist();
-            await confirmChanges.click();
-        }
+        await expect($('.anki-sync-confirmation')).not.toExist();
         console.log(logs);
         await delay(100);
     }

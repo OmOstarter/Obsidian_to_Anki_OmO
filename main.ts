@@ -5,7 +5,6 @@ import { DEFAULT_IGNORED_FILE_GLOBS, SettingsTab } from './src/settings'
 import { ANKI_ICON } from './src/constants'
 import { settingToData } from './src/setting-to-data'
 import { FileManager } from './src/files-manager'
-import { confirmAnkiChanges } from './src/sync-confirmation-modal'
 import {
 	SHARED_SETTINGS_PATH,
 	makeSharedSettings,
@@ -249,19 +248,7 @@ export default class MyPlugin extends Plugin {
 		
 		await manager.initialiseFiles()
 		const changes = await manager.prepareNoteChanges()
-		if (manager.unavailable_note_ids.length > 0) {
-			new Notice(
-				`${manager.unavailable_note_ids.length} 張卡片已從 Anki 刪除或尚未同步；請在確認視窗選擇是否復原。`
-			)
-		}
-		if (changes.length > 0) {
-			const approved = await confirmAnkiChanges(this.app, changes)
-			if (approved == null) {
-				new Notice('已取消同步，Anki 與 Markdown 均未變更。')
-				return
-			}
-			manager.setApprovedNoteChanges(approved)
-		}
+		manager.setApprovedNoteChanges(new Set(changes.map(change => change.identifier)))
 		await manager.requests_1()
 		this.added_media = Array.from(manager.added_media_set)
 		const hashes = manager.getHashes()

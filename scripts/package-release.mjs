@@ -35,7 +35,10 @@ const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclud
 const ignored = execFileSync('git', ['ls-files', '--cached', '--ignored', '--exclude-standard', '-z'], {
     cwd: root, encoding: 'utf8'
 }).split('\0');
-const excluded = new Set(ignored);
+const deleted = execFileSync('git', ['ls-files', '--deleted', '-z'], {
+    cwd: root, encoding: 'utf8'
+}).split('\0');
+const excluded = new Set([...ignored, ...deleted]);
 for (const file of new Set(files)) {
     if (!excluded.has(file)) copy(file, sourceDir);
 }

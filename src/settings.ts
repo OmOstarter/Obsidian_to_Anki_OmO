@@ -1,6 +1,7 @@
 import { PluginSettingTab, Setting, Notice, TFolder } from 'obsidian'
 import * as AnkiConnect from './anki'
 import { SHARED_SETTINGS_PATH } from './shared-settings'
+import { orderedFolders } from './folder-order'
 
 const defaultDescs = {
 	"Scan Directory": "The directory to scan. Leave empty to scan the entire vault",
@@ -253,12 +254,10 @@ export class SettingsTab extends PluginSettingTab {
 
 	get_folders(): TFolder[] {
 		const app = (this as any).plugin.app
-		let folder_list: TFolder[] = [app.vault.getRoot()]
-		for (let folder of folder_list) {
-			let filtered_list: TFolder[] = folder.children.filter((element) => element.hasOwnProperty("children")) as TFolder[]
-			folder_list.push(...filtered_list)
-		}
-		return folder_list.slice(1) //Removes initial vault folder
+		const explorer = app.workspace.getLeavesOfType('file-explorer')[0]?.view
+		return orderedFolders<TFolder>(app.vault.getRoot(),
+			explorer?.sortOrder === 'alphabeticalReverse',
+			folder => explorer?.getSortedFolderItems?.(folder)?.map(item => item.file))
 	}
 
 	setup_folder_deck(folder: TFolder, row_cells: HTMLCollection) {
@@ -275,9 +274,8 @@ export class SettingsTab extends PluginSettingTab {
 					plugin.saveAllData()
 				})
 			)
-		folder_deck.settingEl = row_cells[1] as HTMLElement
+		folder_deck.settingEl.addClass('anki-folder-setting')
 		folder_deck.infoEl.remove()
-		folder_deck.controlEl.className += " anki-center"
 	}
 
 	setup_folder_tag(folder: TFolder, row_cells: HTMLCollection) {
@@ -294,9 +292,8 @@ export class SettingsTab extends PluginSettingTab {
 					plugin.saveAllData()
 				})
 			)
-		folder_tag.settingEl = row_cells[2] as HTMLElement
+		folder_tag.settingEl.addClass('anki-folder-setting')
 		folder_tag.infoEl.remove()
-		folder_tag.controlEl.className += " anki-center"
 	}
 
 	setup_folder_table() {
@@ -305,7 +302,7 @@ export class SettingsTab extends PluginSettingTab {
 		const folder_list = this.get_folders()
 		containerEl.createEl('h3', {text: 'Folder settings'})
 		this.create_collapsible("Folder Table")
-		let folder_table = containerEl.createEl('table', {cls: "anki-settings-table"})
+		let folder_table = containerEl.createEl('table', {cls: "anki-settings-table anki-folder-table"})
 		let head = folder_table.createTHead()
 		let header_row = head.insertRow()
 		for (let header of ["Folder", "Folder Deck", "Folder Tags"]) {
@@ -329,7 +326,8 @@ export class SettingsTab extends PluginSettingTab {
 
 			let row_cells = row.children
 
-			row_cells[0].innerHTML = folder.path
+			row_cells[0].textContent = folder.path
+			row_cells[0].setAttribute('title', folder.path)
 			this.setup_folder_deck(folder, row_cells)
 			this.setup_folder_tag(folder, row_cells)
 		}

@@ -8,10 +8,11 @@
 
 本專案是 [Pseudonium/Obsidian_to_Anki](https://github.com/Pseudonium/Obsidian_to_Anki) 的衍生版本，保留原專案功能，並加入以下改進：
 
-- **卡片變更確認**：同步更新前，檢視欄位的前後差異，勾選要套用的變更。
-- **遺失卡片復原**：當筆記中的卡片 ID 已不存在於 Anki 時，可確認後重新建立卡片，並更新 Markdown 中的 ID。若只是另一台電腦尚未完成 Anki 同步，請先取消並完成同步。
+- **直接匯入與更新**：點選匯入後直接同步卡片，不需逐張確認變更。
+- **遺失卡片復原**：當筆記中的卡片 ID 已不存在於 Anki 時，會自動重新建立卡片，並更新 Markdown 中的 ID。使用多台電腦時，請先完成 Anki 同步再匯入，避免將尚未同步的卡片重新建立。
 - **共用設定**：支援透過共用設定檔保存與載入插件設定。
 - **筆記連結改進**：改善 Anki 卡片返回 Obsidian 筆記的連結處理。
+- **緊湊的 Folder Table**：表格配合設定頁寬度，長路徑自動換行；資料夾依階層排列，優先沿用檔案總管排序，無法取得時使用自然名稱排序。
 
 ### 安裝此版本
 
@@ -56,7 +57,7 @@ npm run package-release
 
 ## English
 
-This repository is a fork of [Pseudonium/Obsidian_to_Anki](https://github.com/Pseudonium/Obsidian_to_Anki). It adds a confirmation dialog for card updates and recovery, shared settings, and improvements to Obsidian file links.
+This repository is a fork of [Pseudonium/Obsidian_to_Anki](https://github.com/Pseudonium/Obsidian_to_Anki). It imports and updates cards directly without a confirmation dialog, automatically recreates missing cards, and adds shared settings and improvements to Obsidian file links. When using multiple computers, sync Anki before importing to avoid recreating cards that have not synced yet.
 
 ## Install this fork
 
